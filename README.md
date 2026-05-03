@@ -37,7 +37,7 @@ This fork updates the official CLI for Polymarket CLOB V2:
 Build from source:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/mltpascual/polymarket-cli-v2.git
 cd polymarket-cli-v2
 cargo build --release
 ```
