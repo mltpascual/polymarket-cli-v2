@@ -154,7 +154,7 @@ fn finish_setup(address: Address) -> Result<()> {
         Some(proxy) => {
             println!("  ✓ Proxy wallet derived");
             println!("    Proxy: {proxy}");
-            println!("    Deposit USDC to this address to start trading.");
+            println!("    Deposit pUSD collateral to this address to start trading.");
         }
         None => {
             println!("  ✗ Could not derive proxy wallet");
@@ -167,15 +167,16 @@ fn finish_setup(address: Address) -> Result<()> {
     step_header(3, total, "Fund Wallet");
 
     let deposit_addr = proxy.unwrap_or(address);
-    println!("  ○ Deposit USDC to your wallet to start trading");
+    println!("  ○ Deposit pUSD collateral to your wallet to start trading");
     println!("    Run: polymarket bridge deposit {deposit_addr}");
-    println!("    Or transfer USDC directly on Polygon");
+    println!("    Or transfer supported collateral directly on Polygon");
 
     println!();
 
     step_header(4, total, "Approve Contracts");
 
-    println!("  Run `polymarket approve set` to approve contracts for trading.");
+    println!("  Use the Polymarket app to approve proxy/safe wallets for trading.");
+    println!("  Run `polymarket --signature-type eoa approve set` only for direct EOA trading.");
     println!("  Or `polymarket approve check` to see current approval status.");
 
     println!();

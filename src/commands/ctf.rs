@@ -13,7 +13,7 @@ use crate::auth;
 use crate::output::OutputFormat;
 use crate::output::ctf as ctf_output;
 
-use super::{USDC_ADDRESS_STR, USDC_DECIMALS};
+use super::{COLLATERAL_ADDRESS_STR, COLLATERAL_DECIMALS};
 
 #[derive(Args)]
 pub struct CtfArgs {
@@ -28,11 +28,11 @@ pub enum CtfCommand {
         /// Condition ID (0x-prefixed 32-byte hex)
         #[arg(long)]
         condition: B256,
-        /// Amount in USDC (e.g. 10 for $10)
+        /// Amount in pUSD collateral (e.g. 10 for $10)
         #[arg(long)]
         amount: String,
-        /// Collateral token address (defaults to USDC)
-        #[arg(long, default_value = USDC_ADDRESS_STR)]
+        /// Collateral token address (defaults to pUSD)
+        #[arg(long, default_value = COLLATERAL_ADDRESS_STR)]
         collateral: Address,
         /// Custom partition as comma-separated index sets (e.g. "1,2" for binary, "1,2,4" for 3-outcome)
         #[arg(long)]
@@ -46,11 +46,11 @@ pub enum CtfCommand {
         /// Condition ID (0x-prefixed 32-byte hex)
         #[arg(long)]
         condition: B256,
-        /// Amount in USDC (e.g. 10 for $10)
+        /// Amount in pUSD collateral (e.g. 10 for $10)
         #[arg(long)]
         amount: String,
-        /// Collateral token address (defaults to USDC)
-        #[arg(long, default_value = USDC_ADDRESS_STR)]
+        /// Collateral token address (defaults to pUSD)
+        #[arg(long, default_value = COLLATERAL_ADDRESS_STR)]
         collateral: Address,
         /// Custom partition as comma-separated index sets (e.g. "1,2" for binary, "1,2,4" for 3-outcome)
         #[arg(long)]
@@ -64,8 +64,8 @@ pub enum CtfCommand {
         /// Condition ID (0x-prefixed 32-byte hex)
         #[arg(long)]
         condition: B256,
-        /// Collateral token address (defaults to USDC)
-        #[arg(long, default_value = USDC_ADDRESS_STR)]
+        /// Collateral token address (defaults to pUSD)
+        #[arg(long, default_value = COLLATERAL_ADDRESS_STR)]
         collateral: Address,
         /// Custom index sets as comma-separated values (e.g. "1,2" for binary, "1" for YES only)
         #[arg(long)]
@@ -79,7 +79,7 @@ pub enum CtfCommand {
         /// Condition ID (0x-prefixed 32-byte hex)
         #[arg(long)]
         condition: B256,
-        /// Comma-separated amounts in USDC for each outcome (e.g. "10,5")
+        /// Comma-separated pUSD collateral amounts for each outcome (e.g. "10,5")
         #[arg(long)]
         amounts: String,
     },
@@ -109,8 +109,8 @@ pub enum CtfCommand {
     },
     /// Calculate a position ID (ERC1155 token ID) from collateral and collection
     PositionId {
-        /// Collateral token address (defaults to USDC)
-        #[arg(long, default_value = USDC_ADDRESS_STR)]
+        /// Collateral token address (defaults to pUSD)
+        #[arg(long, default_value = COLLATERAL_ADDRESS_STR)]
         collateral: Address,
         /// Collection ID (0x-prefixed 32-byte hex)
         #[arg(long)]
@@ -118,12 +118,12 @@ pub enum CtfCommand {
     },
 }
 
-fn usdc_to_raw(val: Decimal) -> Result<U256> {
-    let multiplier = Decimal::from(10u64.pow(USDC_DECIMALS));
+fn collateral_to_raw(val: Decimal) -> Result<U256> {
+    let multiplier = Decimal::from(10u64.pow(COLLATERAL_DECIMALS));
     let raw = val * multiplier;
     anyhow::ensure!(
         raw.fract().is_zero(),
-        "Amount {val} exceeds USDC precision (max 6 decimal places)"
+        "Amount {val} exceeds collateral precision (max 6 decimal places)"
     );
     let raw_u64: u64 = raw
         .try_into()
@@ -134,7 +134,7 @@ fn usdc_to_raw(val: Decimal) -> Result<U256> {
 fn parse_usdc_amount(s: &str) -> Result<U256> {
     let val: Decimal = s.trim().parse().context(format!("Invalid amount: {s}"))?;
     anyhow::ensure!(val > Decimal::ZERO, "Amount must be positive");
-    usdc_to_raw(val)
+    collateral_to_raw(val)
 }
 
 fn parse_usdc_amounts(s: &str) -> Result<Vec<U256>> {
@@ -148,7 +148,7 @@ fn parse_usdc_amounts(s: &str) -> Result<Vec<U256>> {
                 val >= Decimal::ZERO,
                 "Amount must be non-negative: {trimmed}"
             );
-            usdc_to_raw(val)
+            collateral_to_raw(val)
         })
         .collect()
 }

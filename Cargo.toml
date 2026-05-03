@@ -1,6 +1,6 @@
 [package]
 name = "polymarket-cli"
-version = "0.1.4"
+version = "0.1.5-v2.1"
 edition = "2024"
 rust-version = "1.88.0"
 description = "CLI for Polymarket — browse markets, trade, and manage positions"
@@ -14,7 +14,7 @@ name = "polymarket"
 path = "src/main.rs"
 
 [dependencies]
-polymarket-client-sdk = { version = "0.4", features = ["gamma", "data", "bridge", "clob", "ctf"] }
+polymarket-client-sdk = { package = "polymarket_client_sdk_v2", version = "0.5.1", features = ["gamma", "data", "bridge", "clob", "ctf"] }
 alloy = { version = "1.6.3", default-features = false, features = ["providers", "sol-types", "contract", "reqwest", "reqwest-rustls-tls", "signer-local", "signers"] }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

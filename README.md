@@ -1,492 +1,213 @@
-# Polymarket CLI
+# Polymarket CLI V2
 
-Rust CLI for Polymarket. Browse markets, place orders, manage positions, and interact with onchain contracts — from a terminal or as a JSON API for scripts and agents.
+Command-line client for Polymarket, patched for the CLOB V2 migration.
 
-> **Warning:** This is early, experimental software. Use at your own risk and do not use with large amounts of funds. APIs, commands, and behavior may change without notice. Always verify transactions before confirming.
+This fork keeps the original `polymarket` CLI interface while updating the CLOB client, order signing, collateral defaults, and approval checks for Polymarket's V2 exchange contracts.
+
+> This is an independent fork, not an official Polymarket release. Use at your own risk and verify all transactions before signing.
+
+## Features
+
+- Browse Polymarket markets, events, tags, series, profiles, comments, sports metadata, and on-chain data.
+- Query CLOB prices, spreads, midpoints, order books, markets, balances, orders, trades, rewards, and account status.
+- Place, cancel, and manage CLOB orders through the V2 Rust SDK.
+- Check pUSD and CTF token approvals against the V2 exchange contracts.
+- Supports `table` and `json` output for both interactive and scripted usage.
+
+## V2 Changes
+
+This fork updates the official CLI for Polymarket CLOB V2:
+
+- Replaces the legacy Rust SDK with `polymarket_client_sdk_v2`.
+- Uses V2 order signing behavior from the V2 SDK.
+- Uses pUSD as the default collateral token:
+  - `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB`
+- Checks approvals against the V2 contracts:
+  - CTF Exchange V2: `0xE111180000d2663C0091e4f400237545B87B996B`
+  - Neg Risk Exchange V2: `0xe2222d279d744050d28e00520010520000310F59`
+  - Neg Risk Adapter: `0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296`
+- Derives the configured trading wallet for `approve check`:
+  - `proxy` checks the derived Polymarket proxy wallet
+  - `gnosis-safe` checks the derived safe wallet
+  - `eoa` checks the signer address directly
+- Blocks `approve set` in `proxy` and `gnosis-safe` modes because direct EOA approval transactions cannot approve assets held by the derived wallet.
 
 ## Install
 
-### Homebrew (macOS / Linux)
+Build from source:
 
 ```bash
-brew tap Polymarket/polymarket-cli https://github.com/Polymarket/polymarket-cli
-brew install polymarket
+git clone <repo-url>
+cd polymarket-cli-v2
+cargo build --release
 ```
 
-### Shell script
+Install the binary somewhere on `PATH`:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Polymarket/polymarket-cli/main/install.sh | sh
+install -m 0755 target/release/polymarket /usr/local/bin/polymarket
 ```
 
-### Build from source
+On Apple Silicon Homebrew installs, this path is commonly used instead:
 
 ```bash
-git clone https://github.com/Polymarket/polymarket-cli
-cd polymarket-cli
-cargo install --path .
+install -m 0755 target/release/polymarket /opt/homebrew/bin/polymarket
 ```
 
-## Quick Start
+Verify:
 
 ```bash
-# No wallet needed — browse markets immediately
-polymarket markets list --limit 5
-polymarket markets search "election"
-polymarket events list --tag politics
-
-# Check a specific market
-polymarket markets get will-trump-win-the-2024-election
-
-# JSON output for scripts
-polymarket -o json markets list --limit 3
+polymarket --version
 ```
 
-To trade, set up a wallet:
+Expected:
 
-```bash
-polymarket setup
-# Or manually:
-polymarket wallet create
-polymarket approve set
+```text
+polymarket 0.1.5-v2.1
 ```
 
 ## Configuration
 
-### Wallet Setup
+The CLI resolves private keys in this order:
 
-The CLI needs a private key to sign orders and on-chain transactions. Three ways to provide it (checked in this order):
+1. `--private-key`
+2. `POLYMARKET_PRIVATE_KEY`
+3. `~/.config/polymarket/config.json`
 
-1. **CLI flag**: `--private-key 0xabc...`
-2. **Environment variable**: `POLYMARKET_PRIVATE_KEY=0xabc...`
-3. **Config file**: `~/.config/polymarket/config.json`
+The default signature type is `proxy`.
 
 ```bash
-# Create a new wallet (generates random key, saves to config)
 polymarket wallet create
-
-# Import an existing key
-polymarket wallet import 0xabc123...
-
-# Check what's configured
+polymarket wallet import <private-key>
 polymarket wallet show
 ```
 
-The config file (`~/.config/polymarket/config.json`):
+Supported signature types:
 
-```json
-{
-  "private_key": "0x...",
-  "chain_id": 137,
-  "signature_type": "proxy"
-}
-```
+- `proxy`
+- `eoa`
+- `gnosis-safe`
 
-### Signature Types
-
-- `proxy` (default) — uses Polymarket's proxy wallet system
-- `eoa` — signs directly with your key
-- `gnosis-safe` — for multisig wallets
-
-Override per-command with `--signature-type eoa` or via `POLYMARKET_SIGNATURE_TYPE`.
-
-### What Needs a Wallet
-
-Most commands work without a wallet — browsing markets, viewing order books, checking prices. You only need a wallet for:
-
-- Placing and canceling orders (`clob create-order`, `clob market-order`, `clob cancel-*`)
-- Checking your balances and trades (`clob balance`, `clob trades`, `clob orders`)
-- On-chain operations (`approve set`, `ctf split/merge/redeem`)
-- Reward and API key management (`clob rewards`, `clob create-api-key`)
-
-## Output Formats
-
-Every command supports `--output table` (default) and `--output json`.
+Override per command:
 
 ```bash
-# Human-readable table (default)
-polymarket markets list --limit 2
+polymarket --signature-type eoa wallet show
 ```
 
-```
- Question                            Price (Yes)  Volume   Liquidity  Status
- Will Trump win the 2024 election?   52.00¢       $145.2M  $1.2M      Active
- Will BTC hit $100k by Dec 2024?     67.30¢       $89.4M   $430.5K    Active
-```
+## Safety
+
+Do not commit or publish:
+
+- `.env`
+- private keys
+- CLOB API credentials
+- `~/.config/polymarket/config.json`
+- build artifacts under `target/`
+
+The `.gitignore` excludes common local files and Rust build output, but review `git status --short --ignored` before publishing a fork.
+
+## Approvals
+
+Check approvals:
 
 ```bash
-# Machine-readable JSON
-polymarket -o json markets list --limit 2
-```
-
-```json
-[
-  { "id": "12345", "question": "Will Trump win the 2024 election?", "outcomePrices": ["0.52", "0.48"], ... },
-  { "id": "67890", "question": "Will BTC hit $100k by Dec 2024?", ... }
-]
-```
-
-Short form: `-o json` or `-o table`.
-
-Errors follow the same pattern — table mode prints `Error: ...` to stderr, JSON mode prints `{"error": "..."}` to stdout. Non-zero exit code either way.
-
-## Commands
-
-### Markets
-
-```bash
-# List markets with filters
-polymarket markets list --limit 10
-polymarket markets list --active true --order volume_num
-polymarket markets list --closed false --limit 50 --offset 25
-
-# Get a single market by ID or slug
-polymarket markets get 12345
-polymarket markets get will-trump-win
-
-# Search
-polymarket markets search "bitcoin" --limit 5
-
-# Get tags for a market
-polymarket markets tags 12345
-```
-
-**Flags for `markets list`**: `--limit`, `--offset`, `--order`, `--ascending`, `--active`, `--closed`
-
-### Events
-
-Events group related markets (e.g. "2024 Election" contains multiple yes/no markets).
-
-```bash
-polymarket events list --limit 10
-polymarket events list --tag politics --active true
-polymarket events get 500
-polymarket events tags 500
-```
-
-**Flags for `events list`**: `--limit`, `--offset`, `--order`, `--ascending`, `--active`, `--closed`, `--tag`
-
-### Tags, Series, Comments, Profiles, Sports
-
-```bash
-# Tags
-polymarket tags list
-polymarket tags get politics
-polymarket tags related politics
-polymarket tags related-tags politics
-
-# Series (recurring events)
-polymarket series list --limit 10
-polymarket series get 42
-
-# Comments on an entity
-polymarket comments list --entity-type event --entity-id 500
-polymarket comments get abc123
-polymarket comments by-user 0xf5E6...
-
-# Public profiles
-polymarket profiles get 0xf5E6...
-
-# Sports metadata
-polymarket sports list
-polymarket sports market-types
-polymarket sports teams --league NFL --limit 32
-```
-
-### Order Book & Prices (CLOB)
-
-All read-only — no wallet needed.
-
-```bash
-# Check API health
-polymarket clob ok
-
-# Prices
-polymarket clob price 48331043336612883... --side buy
-polymarket clob midpoint 48331043336612883...
-polymarket clob spread 48331043336612883...
-
-# Batch queries (comma-separated token IDs)
-polymarket clob batch-prices "TOKEN1,TOKEN2" --side buy
-polymarket clob midpoints "TOKEN1,TOKEN2"
-polymarket clob spreads "TOKEN1,TOKEN2"
-
-# Order book
-polymarket clob book 48331043336612883...
-polymarket clob books "TOKEN1,TOKEN2"
-
-# Last trade
-polymarket clob last-trade 48331043336612883...
-
-# Market info
-polymarket clob market 0xABC123...  # by condition ID
-polymarket clob markets             # list all
-
-# Price history
-polymarket clob price-history 48331043336612883... --interval 1d --fidelity 30
-
-# Metadata
-polymarket clob tick-size 48331043336612883...
-polymarket clob fee-rate 48331043336612883...
-polymarket clob neg-risk 48331043336612883...
-polymarket clob time
-polymarket clob geoblock
-```
-
-**Interval options for `price-history`**: `1m`, `1h`, `6h`, `1d`, `1w`, `max`
-
-### Trading (CLOB, authenticated)
-
-Requires a configured wallet.
-
-```bash
-# Place a limit order (buy 10 shares at $0.50)
-polymarket clob create-order \
-  --token 48331043336612883... \
-  --side buy --price 0.50 --size 10
-
-# Place a market order (buy $5 worth)
-polymarket clob market-order \
-  --token 48331043336612883... \
-  --side buy --amount 5
-
-# Post multiple orders at once
-polymarket clob post-orders \
-  --tokens "TOKEN1,TOKEN2" \
-  --side buy \
-  --prices "0.40,0.60" \
-  --sizes "10,10"
-
-# Cancel
-polymarket clob cancel ORDER_ID
-polymarket clob cancel-orders "ORDER1,ORDER2"
-polymarket clob cancel-market --market 0xCONDITION...
-polymarket clob cancel-all
-
-# View your orders and trades
-polymarket clob orders
-polymarket clob orders --market 0xCONDITION...
-polymarket clob order ORDER_ID
-polymarket clob trades
-
-# Check balances
-polymarket clob balance --asset-type collateral
-polymarket clob balance --asset-type conditional --token 48331043336612883...
-polymarket clob update-balance --asset-type collateral
-```
-
-**Order types**: `GTC` (default), `FOK`, `GTD`, `FAK`. Add `--post-only` for limit orders.
-
-### Rewards & API Keys (CLOB, authenticated)
-
-```bash
-polymarket clob rewards --date 2024-06-15
-polymarket clob earnings --date 2024-06-15
-polymarket clob earnings-markets --date 2024-06-15
-polymarket clob reward-percentages
-polymarket clob current-rewards
-polymarket clob market-reward 0xCONDITION...
-
-# Check if orders are scoring rewards
-polymarket clob order-scoring ORDER_ID
-polymarket clob orders-scoring "ORDER1,ORDER2"
-
-# API key management
-polymarket clob api-keys
-polymarket clob create-api-key
-polymarket clob delete-api-key
-
-# Account status
-polymarket clob account-status
-polymarket clob notifications
-polymarket clob delete-notifications "NOTIF1,NOTIF2"
-```
-
-### On-Chain Data
-
-Public data — no wallet needed.
-
-```bash
-# Portfolio
-polymarket data positions 0xWALLET_ADDRESS
-polymarket data closed-positions 0xWALLET_ADDRESS
-polymarket data value 0xWALLET_ADDRESS
-polymarket data traded 0xWALLET_ADDRESS
-
-# Trade history
-polymarket data trades 0xWALLET_ADDRESS --limit 50
-
-# Activity
-polymarket data activity 0xWALLET_ADDRESS
-
-# Market data
-polymarket data holders 0xCONDITION_ID
-polymarket data open-interest 0xCONDITION_ID
-polymarket data volume 12345  # event ID
-
-# Leaderboards
-polymarket data leaderboard --period month --order-by pnl --limit 10
-polymarket data builder-leaderboard --period week
-polymarket data builder-volume --period month
-```
-
-### Contract Approvals
-
-Before trading, Polymarket contracts need ERC-20 (USDC) and ERC-1155 (CTF token) approvals.
-
-```bash
-# Check current approvals (read-only)
 polymarket approve check
-polymarket approve check 0xSOME_ADDRESS
-
-# Approve all contracts (sends 6 on-chain transactions, needs MATIC for gas)
-polymarket approve set
 ```
 
-### CTF Operations
+In `proxy` and `gnosis-safe` modes, use the Polymarket web app to approve the derived wallet. This CLI intentionally blocks `approve set` in those modes to avoid sending approvals from the wrong address.
 
-Split, merge, and redeem conditional tokens directly on-chain.
+Direct EOA approvals are available only when explicitly requested:
 
 ```bash
-# Split $10 USDC into YES/NO tokens
-polymarket ctf split --condition 0xCONDITION... --amount 10
-
-# Merge tokens back to USDC
-polymarket ctf merge --condition 0xCONDITION... --amount 10
-
-# Redeem winning tokens after resolution
-polymarket ctf redeem --condition 0xCONDITION...
-
-# Redeem neg-risk positions
-polymarket ctf redeem-neg-risk --condition 0xCONDITION... --amounts "10,5"
-
-# Calculate IDs (read-only, no wallet needed)
-polymarket ctf condition-id --oracle 0xORACLE... --question 0xQUESTION... --outcomes 2
-polymarket ctf collection-id --condition 0xCONDITION... --index-set 1
-polymarket ctf position-id --collection 0xCOLLECTION...
+polymarket --signature-type eoa approve set
 ```
 
-`--amount` is in USDC (e.g., `10` = $10). The `--partition` flag defaults to binary (`1,2`). On-chain operations require MATIC for gas on Polygon.
+Only use direct EOA approvals if you intend to trade directly from the EOA.
 
-### Bridge
+## Common Commands
 
-Deposit assets from other chains into Polymarket.
+Market browsing:
 
 ```bash
-# Get deposit addresses (EVM, Solana, Bitcoin)
-polymarket bridge deposit 0xWALLET_ADDRESS
-
-# List supported chains and tokens
-polymarket bridge supported-assets
-
-# Check deposit status
-polymarket bridge status 0xDEPOSIT_ADDRESS
+polymarket markets list --limit 10
+polymarket markets search "bitcoin"
+polymarket events list --limit 10
+polymarket tags list
 ```
 
-### Wallet Management
+CLOB market data:
 
 ```bash
-polymarket wallet create               # Generate new random wallet
-polymarket wallet create --force       # Overwrite existing
-polymarket wallet import 0xKEY...      # Import existing key
-polymarket wallet address              # Print wallet address
-polymarket wallet show                 # Full wallet info (address, source, config path)
-polymarket wallet reset                # Delete config (prompts for confirmation)
-polymarket wallet reset --force        # Delete without confirmation
+polymarket clob ok
+polymarket clob book <TOKEN_ID>
+polymarket clob price <TOKEN_ID> --side buy
+polymarket clob midpoint <TOKEN_ID>
+polymarket clob spread <TOKEN_ID>
 ```
 
-### Interactive Shell
+Authenticated account reads:
 
 ```bash
-polymarket shell
-# polymarket> markets list --limit 3
-# polymarket> clob book 48331043336612883...
-# polymarket> exit
-```
-
-Supports command history. All commands work the same as the CLI, just without the `polymarket` prefix.
-
-### Other
-
-```bash
-polymarket status     # API health check
-polymarket setup      # Guided first-time setup wizard
-polymarket upgrade    # Update to the latest version
-polymarket --version
-polymarket --help
-```
-
-## Common Workflows
-
-### Browse and research markets
-
-```bash
-polymarket markets search "bitcoin" --limit 5
-polymarket markets get bitcoin-above-100k
-polymarket clob book 48331043336612883...
-polymarket clob price-history 48331043336612883... --interval 1d
-```
-
-### Set up a new wallet and start trading
-
-```bash
-polymarket wallet create
-polymarket approve set                    # needs MATIC for gas
-polymarket clob balance --asset-type collateral
-polymarket clob market-order --token TOKEN_ID --side buy --amount 5
-```
-
-### Monitor your portfolio
-
-```bash
-polymarket data positions 0xYOUR_ADDRESS
-polymarket data value 0xYOUR_ADDRESS
 polymarket clob orders
 polymarket clob trades
+polymarket clob balance --asset-type collateral
+polymarket clob balance --asset-type conditional --token <TOKEN_ID>
+polymarket clob account-status
 ```
 
-### Place and manage limit orders
+Trading:
 
 ```bash
-# Place order
-polymarket clob create-order --token TOKEN_ID --side buy --price 0.45 --size 20
-
-# Check it
-polymarket clob orders
-
-# Cancel if needed
-polymarket clob cancel ORDER_ID
-
-# Or cancel everything
+polymarket clob create-order --token <TOKEN_ID> --side buy --price 0.50 --size 10
+polymarket clob market-order --token <TOKEN_ID> --side buy --amount 5
+polymarket clob cancel <ORDER_ID>
 polymarket clob cancel-all
 ```
 
-### Script with JSON output
+On-chain data:
 
 ```bash
-# Pipe market data to jq
-polymarket -o json markets list --limit 100 | jq '.[].question'
-
-# Check prices programmatically
-polymarket -o json clob midpoint TOKEN_ID | jq '.mid'
-
-# Error handling in scripts
-if ! result=$(polymarket -o json clob balance --asset-type collateral 2>/dev/null); then
-  echo "Failed to fetch balance"
-fi
+polymarket data positions 0xWALLET
+polymarket data closed-positions 0xWALLET
+polymarket data trades 0xWALLET
+polymarket data leaderboard --period month --order-by pnl
 ```
 
-## Architecture
+JSON output:
 
+```bash
+polymarket -o json markets list --limit 5
+polymarket -o json clob balance --asset-type collateral
 ```
+
+## Development
+
+```bash
+cargo fmt --check
+cargo check
+cargo test
+cargo build --release
+```
+
+Project layout:
+
+```text
 src/
-  main.rs        -- CLI entry point, clap parsing, error handling
-  auth.rs        -- Wallet resolution, RPC provider, CLOB authentication
-  config.rs      -- Config file (~/.config/polymarket/config.json)
-  shell.rs       -- Interactive REPL
-  commands/      -- One module per command group
-  output/        -- Table and JSON rendering per command group
+  main.rs        CLI entry point
+  auth.rs        Wallet resolution, RPC provider, CLOB authentication
+  config.rs      Config file handling
+  commands/      Command implementations
+  output/        Table and JSON rendering
 ```
+
+## Limitations
+
+The following paths should be treated carefully and tested with small size first:
+
+- live order placement
+- live order cancellation
+- direct EOA approval transactions
+- CTF split, merge, and redeem transactions
 
 ## License
 

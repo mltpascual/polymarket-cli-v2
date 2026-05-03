@@ -18,7 +18,7 @@ pub struct ApprovalStatus {
 struct ApprovalRow {
     #[tabled(rename = "Contract")]
     contract: String,
-    #[tabled(rename = "USDC")]
+    #[tabled(rename = "pUSD")]
     usdc: String,
     #[tabled(rename = "CTF Tokens")]
     ctf: String,
@@ -32,7 +32,7 @@ fn format_allowance(allowance: U256) -> String {
     } else {
         let usdc_decimals = U256::from(1_000_000);
         let whole = allowance / usdc_decimals;
-        format!("\u{2713} {whole} USDC")
+        format!("\u{2713} {whole} pUSD")
     }
 }
 
@@ -53,6 +53,9 @@ pub fn print_approval_status(statuses: &[ApprovalStatus], output: &OutputFormat)
                     let mut obj = serde_json::json!({
                         "contract": s.contract_name,
                         "address": s.contract_address,
+                        "collateral": "pUSD",
+                        "collateral_allowance": s.usdc_allowance.to_string(),
+                        "collateral_approved": s.usdc_allowance > U256::ZERO,
                         "usdc_allowance": s.usdc_allowance.to_string(),
                         "usdc_approved": s.usdc_allowance > U256::ZERO,
                         "ctf_approved": s.ctf_approved,

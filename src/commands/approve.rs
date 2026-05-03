@@ -6,14 +6,15 @@ use alloy::sol;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use polymarket_client_sdk::types::{Address, address};
-use polymarket_client_sdk::{POLYGON, contract_config};
+use polymarket_client_sdk::{POLYGON, contract_config, derive_proxy_wallet, derive_safe_wallet};
 
 use crate::auth;
+use crate::config;
 use crate::output::OutputFormat;
 use crate::output::approve::{ApprovalStatus, print_approval_status, print_tx_result};
 
-/// Polygon USDC (same address as `USDC_ADDRESS_STR`; `address!` requires a literal).
-const USDC_ADDRESS: Address = address!("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174");
+/// Polygon pUSD collateral token (same address as `COLLATERAL_ADDRESS_STR`; `address!` requires a literal).
+const PUSD_ADDRESS: Address = address!("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");
 
 sol! {
     #[sol(rpc)]
@@ -59,11 +60,15 @@ fn approval_targets() -> Result<Vec<ApprovalTarget>> {
     let mut targets = vec![
         ApprovalTarget {
             name: "CTF Exchange",
-            address: config.exchange,
+            address: config
+                .exchange_v2
+                .context("No V2 CTF Exchange configured for Polygon")?,
         },
         ApprovalTarget {
             name: "Neg Risk Exchange",
-            address: neg_risk_config.exchange,
+            address: neg_risk_config
+                .exchange_v2
+                .context("No V2 Neg Risk Exchange configured for Polygon")?,
         },
     ];
 
@@ -81,36 +86,47 @@ pub async fn execute(
     args: ApproveArgs,
     output: OutputFormat,
     private_key: Option<&str>,
+    signature_type: Option<&str>,
 ) -> Result<()> {
     match args.command {
-        ApproveCommand::Check { address } => check(address, private_key, output).await,
-        ApproveCommand::Set => set(private_key, output).await,
+        ApproveCommand::Check { address } => {
+            check(address, private_key, signature_type, output).await
+        }
+        ApproveCommand::Set => set(private_key, signature_type, output).await,
     }
 }
 
 async fn check(
     address_arg: Option<Address>,
     private_key: Option<&str>,
+    signature_type: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
     let owner: Address = if let Some(addr) = address_arg {
         addr
     } else {
         let signer = auth::resolve_signer(private_key)?;
-        polymarket_client_sdk::auth::Signer::address(&signer)
+        let signer_address = polymarket_client_sdk::auth::Signer::address(&signer);
+        match config::resolve_signature_type(signature_type)?.as_str() {
+            "proxy" => derive_proxy_wallet(signer_address, POLYGON)
+                .context("Could not derive proxy wallet for Polygon")?,
+            "gnosis-safe" => derive_safe_wallet(signer_address, POLYGON)
+                .context("Could not derive Gnosis Safe wallet for Polygon")?,
+            _ => signer_address,
+        }
     };
 
     let provider = auth::create_readonly_provider().await?;
     let config = contract_config(POLYGON, false).context("No contract config for Polygon")?;
 
-    let usdc = IERC20::new(USDC_ADDRESS, provider.clone());
+    let pusd = IERC20::new(PUSD_ADDRESS, provider.clone());
     let ctf = IERC1155::new(config.conditional_tokens, provider.clone());
 
     let targets = approval_targets()?;
     let mut statuses = Vec::new();
 
     for target in &targets {
-        let (usdc_allowance, usdc_error) = match usdc.allowance(owner, target.address).call().await
+        let (usdc_allowance, usdc_error) = match pusd.allowance(owner, target.address).call().await
         {
             Ok(val) => (val, None),
             Err(e) => (U256::ZERO, Some(e.to_string())),
@@ -135,11 +151,21 @@ async fn check(
     print_approval_status(&statuses, &output)
 }
 
-async fn set(private_key: Option<&str>, output: OutputFormat) -> Result<()> {
+async fn set(
+    private_key: Option<&str>,
+    signature_type: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    let resolved_signature_type = config::resolve_signature_type(signature_type)?;
+    anyhow::ensure!(
+        resolved_signature_type == "eoa",
+        "`approve set` can only send direct EOA approvals. Your configured signature type is `{resolved_signature_type}`, so use Polymarket's app to approve the derived wallet or run `polymarket --signature-type eoa approve set` only if you intend to trade directly from the EOA."
+    );
+
     let provider = auth::create_provider(private_key).await?;
     let config = contract_config(POLYGON, false).context("No contract config for Polygon")?;
 
-    let usdc = IERC20::new(USDC_ADDRESS, provider.clone());
+    let pusd = IERC20::new(PUSD_ADDRESS, provider.clone());
     let ctf = IERC1155::new(config.conditional_tokens, provider.clone());
 
     let targets = approval_targets()?;
@@ -154,16 +180,16 @@ async fn set(private_key: Option<&str>, output: OutputFormat) -> Result<()> {
 
     for target in &targets {
         step += 1;
-        let label = format!("USDC \u{2192} {}", target.name);
-        let tx_hash = usdc
+        let label = format!("pUSD \u{2192} {}", target.name);
+        let tx_hash = pusd
             .approve(target.address, U256::MAX)
             .send()
             .await
-            .context(format!("Failed to send USDC approval for {}", target.name))?
+            .context(format!("Failed to send pUSD approval for {}", target.name))?
             .watch()
             .await
             .context(format!(
-                "Failed to confirm USDC approval for {}",
+                "Failed to confirm pUSD approval for {}",
                 target.name
             ))?;
 

@@ -245,7 +245,7 @@ pub enum ClobCommand {
         /// Side: buy or sell
         #[arg(long)]
         side: CliSide,
-        /// Amount (USDC for buys, shares for sells)
+        /// Amount (pUSD collateral for buys, shares for sells)
         #[arg(long)]
         amount: String,
         /// Order type: FOK or FAK (default: FOK)
@@ -907,7 +907,7 @@ pub async fn execute(
             let result = client
                 .user_earnings_and_markets_config(&request, cursor)
                 .await?;
-            print_user_earnings_markets(&result, output)?;
+            print_user_earnings_markets(&result.data, output)?;
         }
 
         ClobCommand::RewardPercentages => {
